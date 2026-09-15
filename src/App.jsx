@@ -1,10 +1,10 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { cubicBezier } from "motion";
 import { MotionConfig, motion, useMotionTemplate, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
-import { ArrowDown, ArrowUpRight, Blocks, Construction, DraftingCompass, Factory, Menu, Plus, Workflow, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpRight, Blocks, Construction, DraftingCompass, Factory, Menu, Plus, Workflow, X } from "lucide-react";
 
 import framecadMachine from "../assets/framecad-machine.png";
 import heroImage from "../assets/hero-lgs-structure.png";
-import roofTrusses from "../assets/roof-trusses.jpg";
 import constructionSheet from "../construction.png";
 
 const navItems = [
@@ -156,6 +156,7 @@ const processSteps = [
 ];
 
 const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+const assemblyRevealEnd = 0.28;
 const revealEase = [0.16, 1, 0.3, 1];
 const revealViewport = { once: true, amount: 0.22, margin: "0px 0px -18% 0px" };
 
@@ -266,18 +267,46 @@ function ScrollMask({ delay = 0 }) {
   );
 }
 
+function useSectionScroll(offset = ["start end", "end start"]) {
+  const sectionRef = useRef(null);
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset });
+  const progress = useSpring(scrollYProgress, {
+    stiffness: 150,
+    damping: 26,
+    mass: 0.65,
+    restDelta: 0.0001,
+    restSpeed: 0.0001,
+    skipInitialAnimation: true,
+  });
+  return { sectionRef, progress };
+}
+
+function SideReveal({ children, className, from = "left", delay = 0, reducedMotion, ...props }) {
+  return (
+    <motion.div
+      className={className}
+      initial={{ opacity: reducedMotion ? 1 : 0, x: reducedMotion ? 0 : from === "left" ? -48 : 48 }}
+      whileInView={{ opacity: 1, x: 0 }}
+      viewport={{ once: true, amount: 0.16 }}
+      transition={{ duration: reducedMotion ? 0 : 0.9, delay, ease: revealEase }}
+      {...props}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function usePageMotion() {
   const [state, setState] = useState(() => ({
     activeSection: "system",
     headerHidden: false,
-    parallaxY: 0,
     reducedMotion: getInitialMotionPreference(),
   }));
 
   useEffect(() => {
     const root = document.documentElement;
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sectionIds = navItems.map((item) => item.id);
+    const sectionIds = [...navItems.map((item) => item.id), "contact"];
     let lastScrollY = window.scrollY;
     let ticking = false;
 
@@ -291,17 +320,6 @@ function usePageMotion() {
         !reducedMotion && currentScrollY > lastScrollY && currentScrollY > window.innerHeight * 0.22;
 
       root.style.setProperty("--scroll-progress", scrollProgress.toFixed(4));
-
-      const parallaxItem = document.querySelector("[data-parallax]");
-      let parallaxY = 0;
-
-      if (!reducedMotion && parallaxItem) {
-        const rect = parallaxItem.getBoundingClientRect();
-        const speed = Number(parallaxItem.dataset.speed || 0);
-        const viewportMiddle = window.innerHeight / 2;
-        const itemMiddle = rect.top + rect.height / 2;
-        parallaxY = (itemMiddle - viewportMiddle) * speed;
-      }
 
       const marker = window.innerHeight * 0.42;
       let activeSection = sectionIds[0];
@@ -320,8 +338,7 @@ function usePageMotion() {
         if (
           previous.activeSection === activeSection &&
           previous.headerHidden === headerHidden &&
-          previous.reducedMotion === reducedMotion &&
-          Math.abs(previous.parallaxY - parallaxY) < 0.2
+          previous.reducedMotion === reducedMotion
         ) {
           return previous;
         }
@@ -329,7 +346,6 @@ function usePageMotion() {
         return {
           activeSection,
           headerHidden,
-          parallaxY,
           reducedMotion,
         };
       });
@@ -693,6 +709,26 @@ function StageList({ activeStageIndex, reducedMotion }) {
   );
 }
 
+function ConstructionFrame({ index, alt = "", scale }) {
+  return (
+    <motion.div className="construction-viewport" style={{ scale }}>
+      <div className="construction-frame">
+        <img
+          className="construction-sheet"
+          src={constructionSheet}
+          alt={alt}
+          width={1024}
+          height={1536}
+          loading="eager"
+          fetchPriority="low"
+          decoding="async"
+          style={{ transform: `translateY(${(-index * 100) / stages.length}%)` }}
+        />
+      </div>
+    </motion.div>
+  );
+}
+
 const ConstructionLayer = memo(function ConstructionLayer({ stage, index, position, isActive }) {
   const opacity = useTransform(position, (value) => clamp(value - index + 1));
   const visibility = useTransform(position, (value) => value >= index - 1 && value < index + 1 ? "visible" : "hidden");
@@ -705,21 +741,7 @@ const ConstructionLayer = memo(function ConstructionLayer({ stage, index, positi
       aria-hidden={!isActive}
       style={{ opacity, visibility, willChange }}
     >
-      <div className="construction-viewport">
-        <div className="construction-frame">
-          <img
-            className="construction-sheet"
-            src={constructionSheet}
-            alt={`${stage.label}: ${stage.description}`}
-            width={1024}
-            height={1536}
-            loading="eager"
-            fetchPriority="low"
-            decoding="async"
-            style={{ transform: `translateY(${(-index * 100) / stages.length}%)` }}
-          />
-        </div>
-      </div>
+      <ConstructionFrame index={index} alt={`${stage.label}: ${stage.description}`} />
     </motion.div>
   );
 });
@@ -743,6 +765,41 @@ function ConstructionScene({ activeStageIndex, progress }) {
   );
 }
 
+function AssemblyReveal({ progress }) {
+  const expansion = useTransform(progress, [0.04, 0.64], [0, 1], { ease: cubicBezier(0.4, 0, 0.2, 1) });
+  const remaining = useTransform(expansion, (value) => 1 - value);
+  const imageScale = useTransform(expansion, [0, 1], [0.72, 1]);
+  const verticalInset = useTransform(remaining, (value) => value * 18);
+  const centerInset = useTransform(remaining, (value) => 49.98 + value * 0.82);
+  const leftClip = useMotionTemplate`inset(${verticalInset}% ${centerInset}% ${verticalInset}% calc(var(--assembly-inset) * ${remaining}))`;
+  const rightClip = useMotionTemplate`inset(${verticalInset}% calc(var(--assembly-inset) * ${remaining}) ${verticalInset}% ${centerInset}%)`;
+  const leftY = useTransform(remaining, (value) => `${value * 3.5}%`);
+  const rightY = useTransform(remaining, (value) => `${value * -3.5}%`);
+  const opacity = useTransform(progress, [0.86, 1], [1, 0]);
+  const visibility = useTransform(progress, (value) => value >= 1 ? "hidden" : "visible");
+  const titleOpacity = useTransform(progress, [0.38, 0.64, 0.82, 0.96], [0, 1, 1, 0]);
+  const titleY = useTransform(progress, [0.38, 0.68], [32, 0]);
+  const captionOpacity = useTransform(progress, [0.04, 0.2], [1, 0]);
+
+  return (
+    <motion.div className="assembly-reveal" aria-hidden="true" style={{ opacity, visibility }}>
+      {/* Both masks share the same image coordinates, so the halves meet without a camera jump. */}
+      <motion.div className="assembly-reveal-panel is-left" style={{ clipPath: leftClip, y: leftY }}>
+        <ConstructionFrame index={stages.length - 1} scale={imageScale} />
+      </motion.div>
+      <motion.div className="assembly-reveal-panel is-right" style={{ clipPath: rightClip, y: rightY }}>
+        <ConstructionFrame index={stages.length - 1} scale={imageScale} />
+      </motion.div>
+      <motion.p className="assembly-reveal-caption" style={{ opacity: captionOpacity }}>
+        From components to a complete building.
+      </motion.p>
+      <motion.p className="assembly-reveal-title" style={{ opacity: titleOpacity, y: titleY }}>
+        Assembly
+      </motion.p>
+    </motion.div>
+  );
+}
+
 const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
   const sectionRef = useRef(null);
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start start", "end end"] });
@@ -754,7 +811,9 @@ const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
     restSpeed: 0.0001,
     skipInitialAnimation: true,
   });
-  const progress = useTransform(smoothProgress, (value) => reducedMotion ? 1 : clamp(value));
+  const revealProgress = useTransform(smoothProgress, (value) => clamp(value / assemblyRevealEnd));
+  const progress = useTransform(smoothProgress, (value) => reducedMotion ? 1 : clamp((value - assemblyRevealEnd) / (1 - assemblyRevealEnd)));
+  const contentOpacity = useTransform(smoothProgress, [assemblyRevealEnd, assemblyRevealEnd + 0.045], [0, 1]);
   const progressLabel = useTransform(progress, (value) => `${Math.round(value * 100).toString().padStart(2, "0")}%`);
   const [activeStageIndex, setActiveStageIndex] = useState(() => getActiveStageIndex(progress.get()));
 
@@ -767,7 +826,8 @@ const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
         <div className="assembly-visual" aria-label="Construction stages">
           <ConstructionScene activeStageIndex={activeStageIndex} progress={progress} />
         </div>
-        <div className="assembly-copy">
+        {!reducedMotion && <AssemblyReveal progress={revealProgress} />}
+        <motion.div className="assembly-copy" style={{ opacity: reducedMotion ? 1 : contentOpacity }}>
           <div className="assembly-heading">
             <Reveal className="section-label">The System</Reveal>
             <SplitReveal
@@ -779,27 +839,30 @@ const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
               trusses, envelope elements, and rapid installation on site.
             </Reveal>
           </div>
-        </div>
-        <div className="assembly-timeline">
+        </motion.div>
+        <motion.div className="assembly-timeline" style={{ opacity: reducedMotion ? 1 : contentOpacity }}>
           <div className="blueprint-meta">
             <span>Assembly Progress</span>
             <motion.strong>{progressLabel}</motion.strong>
           </div>
           <StageList activeStageIndex={activeStageIndex} reducedMotion={reducedMotion} />
-        </div>
+        </motion.div>
       </div>
     </section>
   );
 });
 
-function ManufacturingSection() {
+function ManufacturingSection({ reducedMotion }) {
+  const { sectionRef, progress } = useSectionScroll();
+  const mediaClip = useTransform(progress, [0.08, 0.42], ["inset(0% 100% 0% 0%)", "inset(0% 0% 0% 0%)"]);
+  const imageX = useTransform(progress, [0.08, 0.48], ["-10%", "0%"]);
+
   return (
-    <section className="manufacturing-section" aria-labelledby="manufacturing-title">
-      <div className="manufacturing-media">
-        <img src={framecadMachine} alt="FRAMECAD profile manufacturing machine" loading="lazy" />
-        <ScrollMask />
-      </div>
-      <div className="manufacturing-copy">
+    <section className="manufacturing-section" aria-labelledby="manufacturing-title" ref={sectionRef}>
+      <motion.div className="manufacturing-media" style={{ clipPath: reducedMotion ? "none" : mediaClip }}>
+        <motion.img src={framecadMachine} alt="FRAMECAD profile manufacturing machine" loading="lazy" style={{ x: reducedMotion ? 0 : imageX }} />
+      </motion.div>
+      <SideReveal className="manufacturing-copy" from="right" reducedMotion={reducedMotion}>
         <Reveal className="section-label">Precision Through Digital Manufacturing</Reveal>
         <SplitReveal
           id="manufacturing-title"
@@ -813,20 +876,18 @@ function ManufacturingSection() {
           <Reveal delay={0.14}>
             <strong>95%</strong>
             <span>recyclable material potential</span>
-            <ScrollMask delay={0.12} />
           </Reveal>
           <Reveal delay={0.2}>
             <strong>mm</strong>
             <span>installation-level precision</span>
-            <ScrollMask delay={0.18} />
           </Reveal>
         </div>
-      </div>
+      </SideReveal>
     </section>
   );
 }
 
-function SystemsSection() {
+function SystemsSection({ reducedMotion }) {
   return (
     <section className="systems-section" aria-labelledby="systems-title">
       <div className="section-heading">
@@ -835,46 +896,50 @@ function SystemsSection() {
       </div>
       <div className="system-cards">
         {systemCards.map((card, index) => (
-          <Reveal as="article" delay={index * 0.05} key={card.title}>
-            <span className="card-index">{String(index + 1).padStart(2, "0")}</span>
-            <h3>{card.title}</h3>
-            <p>{card.body}</p>
-            <ScrollMask delay={index * 0.05} />
-          </Reveal>
+          <SideReveal delay={index * 0.08} from={index % 2 ? "right" : "left"} reducedMotion={reducedMotion} key={card.title}>
+            <article>
+              <span className="card-index">{String(index + 1).padStart(2, "0")}</span>
+              <h3>{card.title}</h3>
+              <p>{card.body}</p>
+            </article>
+          </SideReveal>
         ))}
       </div>
     </section>
   );
 }
 
-function ApplicationsSection({ parallaxY }) {
+function ApplicationsSection({ reducedMotion }) {
+  const { sectionRef, progress } = useSectionScroll();
+  const mediaClip = useTransform(progress, [0.12, 0.45], ["inset(12% 24% 12% 24%)", "inset(0% 0% 0% 0%)"]);
+  const imageScale = useTransform(progress, [0.12, 0.45], [0.88, 1]);
+  const titleOpacity = useTransform(progress, [0.32, 0.46], [0, 1]);
+  const detailsOpacity = useTransform(progress, [0.4, 0.48], [0, 1]);
+
   return (
-    <section className="applications-section" id="applications" aria-labelledby="applications-title">
-      <div className="application-image" data-parallax data-speed="0.08" style={{ "--parallax-y": `${parallaxY}px` }}>
-        <img src={roofTrusses} alt="Close-up of light steel roof trusses" loading="lazy" />
-        <ScrollMask />
-      </div>
-      <div className="applications-copy">
-        <Reveal className="section-label">Applications</Reveal>
-        <SplitReveal
-          id="applications-title"
-          text="Residential. Commercial. Industrial. Modular."
-        />
-        <div className="application-grid">
+    <section className="applications-section" id="applications" aria-labelledby="applications-title" ref={sectionRef}>
+      <div className="applications-stage">
+        <motion.div className="application-image" style={{ clipPath: reducedMotion ? "none" : mediaClip }}>
+          <ConstructionFrame index={1} alt="Steel structure ready for a range of building applications" scale={reducedMotion ? 1 : imageScale} />
+        </motion.div>
+        <motion.div className="applications-heading" style={{ opacity: reducedMotion ? 1 : titleOpacity }}>
+          <p className="section-label">Applications</p>
+          <h2 id="applications-title">Spaces for<br /><em>every possibility.</em></h2>
+        </motion.div>
+        <motion.div className="application-grid" style={{ "--application-details-opacity": reducedMotion ? 1 : detailsOpacity }}>
           {applications.map((application, index) => (
-            <Reveal delay={index * 0.05} key={application.title}>
+            <SideReveal delay={index * 0.08} from={index % 2 ? "right" : "left"} reducedMotion={reducedMotion} key={application.title}>
               <h3>{application.title}</h3>
               <p>{application.body}</p>
-              <ScrollMask delay={index * 0.05} />
-            </Reveal>
+            </SideReveal>
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   );
 }
 
-function ProcessSection() {
+function ProcessSection({ reducedMotion }) {
   return (
     <section className="process-section" id="process" aria-labelledby="process-title">
       <div className="section-heading">
@@ -884,30 +949,33 @@ function ProcessSection() {
           text="Integrated workflow from engineering to installation."
         />
       </div>
-      <div className="process-track">
+      <ol className="process-track">
         {processSteps.map((step, index) => (
-          <Reveal as="article" delay={index * 0.04} key={step.title}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <h3>{step.title}</h3>
-            <p>{step.body}</p>
-            <ScrollMask delay={index * 0.04} />
-          </Reveal>
+          <li key={step.title}>
+            <SideReveal from={index % 2 ? "right" : "left"} reducedMotion={reducedMotion}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </SideReveal>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
   );
 }
 
-function AboutSection() {
+function AboutSection({ reducedMotion }) {
   return (
     <section className="about-section" aria-labelledby="about-title">
       <Reveal className="section-label">About INNOSTAL</Reveal>
       <div className="about-grid">
-        <SplitReveal
-          id="about-title"
-          text="A technology-driven company specialised in light gauge steel systems and industrialized construction workflows."
-        />
-        <Reveal delay={0.1}>
+        <SideReveal reducedMotion={reducedMotion}>
+          <SplitReveal
+            id="about-title"
+            text="A technology-driven company specialised in light gauge steel systems and industrialized construction workflows."
+          />
+        </SideReveal>
+        <SideReveal from="right" delay={0.1} reducedMotion={reducedMotion}>
           <p>
             Structural engineering, detailing, CNC production, digital configuration, and assembly
             operate within one coordinated system.
@@ -916,49 +984,65 @@ function AboutSection() {
             The result is faster execution, reduced errors, and greater control throughout the
             project lifecycle.
           </p>
-        </Reveal>
+        </SideReveal>
       </div>
     </section>
   );
 }
 
-function ContactSection() {
+function ContactSection({ reducedMotion }) {
+  const { sectionRef, progress } = useSectionScroll(["start start", "end end"]);
+  const mediaClip = useTransform(progress, [0.08, 0.78], ["inset(0% 0% 0% 0%)", "inset(8% 22% 54% 22%)"], { ease: cubicBezier(0.4, 0, 0.2, 1) });
+  const imageScale = useTransform(progress, [0.08, 0.78], [1, 0.58], { ease: cubicBezier(0.4, 0, 0.2, 1) });
+  const imageY = useTransform(progress, [0.08, 0.78], ["0%", "-23%"], { ease: cubicBezier(0.4, 0, 0.2, 1) });
+  const invitationOpacity = useTransform(progress, [0.08, 0.34], [1, 0]);
+  const invitationVisibility = useTransform(invitationOpacity, (value) => value < 0.001 ? "hidden" : "visible");
+  const invitationY = useTransform(progress, [0.08, 0.4], [0, -40]);
+  const connectOpacity = useTransform(progress, [0.48, 0.76], [0, 1]);
+  const connectVisibility = useTransform(connectOpacity, (value) => value < 0.001 ? "hidden" : "visible");
+  const connectY = useTransform(progress, [0.48, 0.8], [40, 0]);
+
   return (
     <section className="contact-section" id="contact" aria-labelledby="contact-title">
-      <div className="contact-panel">
-        <div>
-          <Reveal className="section-label">Contact</Reveal>
-          <SplitReveal
-            id="contact-title"
-            text="Start a project with a controlled construction system."
-          />
+      <div className="contact-outro" ref={sectionRef}>
+        <div className="contact-stage">
+          <motion.div className="contact-media" style={{ clipPath: reducedMotion ? "none" : mediaClip }}>
+            <motion.div className="contact-photo" style={{ scale: reducedMotion ? 1 : imageScale, y: reducedMotion ? "0%" : imageY }}>
+              <ConstructionFrame index={5} alt="Completed glass-fronted building at sunset" />
+            </motion.div>
+          </motion.div>
+          <motion.div className="contact-invitation" style={{ opacity: reducedMotion ? 1 : invitationOpacity, visibility: reducedMotion ? "visible" : invitationVisibility, y: reducedMotion ? 0 : invitationY }}>
+            <p className="section-label">Your Next Project</p>
+            <h2 id="contact-title">Let's build<br /><em>what's next.</em></h2>
+            <a className="contact-project-link" href="mailto:office@innostal.com?subject=Project%20inquiry">
+              Start a project <ArrowUpRight size={22} strokeWidth={1.25} aria-hidden="true" />
+            </a>
+          </motion.div>
+          <motion.div className="contact-connect" style={{ opacity: reducedMotion ? 1 : connectOpacity, visibility: reducedMotion ? "visible" : connectVisibility, y: reducedMotion ? 0 : connectY }}>
+            <DraftingCompass size={36} strokeWidth={1} aria-hidden="true" />
+            <p className="section-label">A Conversation Starts Here</p>
+            <a className="contact-email" href="mailto:office@innostal.com">office@innostal.com</a>
+            <p>From your first idea to the final connection.</p>
+          </motion.div>
         </div>
-        <div className="contact-grid">
-          <Reveal as="a" delay={0.04} href="mailto:office@innostal.com">
-            <span>Project Inquiries</span>
-            office@innostal.com
-            <ScrollMask delay={0.04} />
-          </Reveal>
-          <Reveal as="a" delay={0.08} href="mailto:hello@innostal.com">
-            <span>General Information</span>
-            hello@innostal.com
-            <ScrollMask delay={0.08} />
-          </Reveal>
-          <Reveal as="address" delay={0.12}>
+      </div>
+      <div className="contact-grid">
+        <SideReveal reducedMotion={reducedMotion}>
+          <address>
             <span>Sofia</span>
-            12 Vishneva Str., Office 5
-            <br />
-            Lozenets 1164, Bulgaria
-            <ScrollMask delay={0.12} />
-          </Reveal>
-          <Reveal as="address" delay={0.16}>
+            12 Vishneva Str., Office 5<br />Lozenets 1164, Bulgaria
+          </address>
+        </SideReveal>
+        <SideReveal delay={0.08} reducedMotion={reducedMotion}>
+          <address>
             <span>Bucharest</span>
-            Soseaua Stefanesti
-            <br />
-            077010 Stefanestii de Jos, Romania
-            <ScrollMask delay={0.16} />
-          </Reveal>
-        </div>
+            Soseaua Stefanesti<br />077010 Stefanestii de Jos, Romania
+          </address>
+        </SideReveal>
+        <SideReveal from="right" delay={0.16} reducedMotion={reducedMotion}>
+          <span>General Inquiries</span>
+          <a href="mailto:hello@innostal.com">hello@innostal.com <ArrowUpRight size={18} aria-hidden="true" /></a>
+        </SideReveal>
       </div>
     </section>
   );
@@ -969,12 +1053,13 @@ function Footer() {
     <footer className="site-footer">
       <span>INNOSTAL</span>
       <span>Copyright 2026</span>
+      <a href="#top" aria-label="Back to top" title="Back to top"><ArrowUp size={22} strokeWidth={1.25} aria-hidden="true" /></a>
     </footer>
   );
 }
 
 export default function App() {
-  const { activeSection, headerHidden, parallaxY, reducedMotion } = usePageMotion();
+  const { activeSection, headerHidden, reducedMotion } = usePageMotion();
 
   return (
     <MotionConfig reducedMotion="user">
@@ -982,12 +1067,12 @@ export default function App() {
       <main id="top">
         <HeroIntro />
         <AssemblySection reducedMotion={reducedMotion} />
-        <ManufacturingSection />
-        <SystemsSection />
-        <ApplicationsSection parallaxY={parallaxY} />
-        <ProcessSection />
-        <AboutSection />
-        <ContactSection />
+        <ManufacturingSection reducedMotion={reducedMotion} />
+        <SystemsSection reducedMotion={reducedMotion} />
+        <ApplicationsSection reducedMotion={reducedMotion} />
+        <ProcessSection reducedMotion={reducedMotion} />
+        <AboutSection reducedMotion={reducedMotion} />
+        <ContactSection reducedMotion={reducedMotion} />
       </main>
       <Footer />
     </MotionConfig>
