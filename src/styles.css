@@ -675,6 +675,7 @@ h3 {
   width: min(100%, 480px);
   min-width: 0;
   min-height: 0;
+  opacity: var(--assembly-content-opacity, 1);
 }
 
 .assembly-heading .section-label {
@@ -698,6 +699,8 @@ h3 {
 .assembly-timeline {
   position: relative;
   min-width: 0;
+  opacity: var(--assembly-content-opacity, 1);
+  visibility: var(--assembly-content-visibility, visible);
 }
 
 .stage-list {
@@ -711,12 +714,7 @@ h3 {
 
 .stage-list li {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 18px 24px 36px;
-  gap: 4px;
   min-width: 0;
-  padding: 12px 0 0;
   color: rgba(255, 255, 255, 0.66);
   border-top: 1px solid rgba(255, 255, 255, 0.36);
   transition:
@@ -724,9 +722,44 @@ h3 {
     color 180ms ease;
 }
 
+.stage-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 18px 24px auto;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 0 0;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.stage-button:hover {
+  color: var(--white);
+}
+
+.stage-button:focus-visible {
+  outline-offset: 2px;
+}
+
 .stage-list li.is-active {
   color: var(--white);
   border-color: var(--signal);
+}
+
+.stage-list.has-animated-selection li.is-active {
+  border-color: rgba(255, 255, 255, 0.36);
+}
+
+.stage-indicator {
+  position: absolute;
+  inset: -1px 0 auto;
+  height: 2px;
+  background: var(--signal);
+  pointer-events: none;
 }
 
 .stage-list span {
@@ -749,10 +782,16 @@ h3 {
   line-height: 1.35;
 }
 
-.assembly-visual {
+.assembly-media {
   position: absolute;
   inset: 0;
   z-index: -1;
+  overflow: hidden;
+}
+
+.assembly-visual {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 
@@ -1165,6 +1204,9 @@ h3 {
 }
 
 .contact-email {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   max-width: 100%;
   font-family: var(--font-display);
   font-size: 5.75rem;
@@ -1360,7 +1402,7 @@ h3 {
     gap: 14px;
   }
 
-  .stage-list li {
+  .stage-button {
     grid-template-rows: 18px 24px;
   }
 
@@ -1414,9 +1456,14 @@ h3 {
   }
 
   .primary-nav a {
-    grid-template-columns: 24px 1fr 20px;
+    grid-template-columns: 24px minmax(0, 1fr) 20px;
     gap: 12px;
     font-size: 2.75rem;
+  }
+
+  .primary-nav a > svg {
+    width: 20px;
+    height: 20px;
   }
 
   .hero {
@@ -1535,7 +1582,7 @@ h3 {
     gap: 14px 12px;
   }
 
-  .stage-list li {
+  .stage-button {
     grid-template-rows: 16px 20px;
     padding: 8px 0 0;
   }
@@ -1726,7 +1773,7 @@ h3 {
     font-size: 2.5rem;
   }
 
-  .stage-list li {
+  .stage-button {
     grid-template-rows: 18px 24px;
   }
 
@@ -1798,7 +1845,7 @@ h3 {
     gap: 10px;
   }
 
-  .stage-list li {
+  .stage-button {
     grid-template-rows: 16px 20px;
     padding-top: 8px;
   }
@@ -1856,7 +1903,7 @@ h3 {
   }
 }
 
-@media (max-height: 600px) and (min-width: 600px) {
+@media (max-height: 600px) and (min-width: 500px) {
   .hero {
     grid-template-rows: minmax(0, 1fr) auto minmax(0, 0.3fr);
     padding: 88px 18px 52px;
@@ -1949,5 +1996,405 @@ h3 {
 
   .hero-image {
     transform: none !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .site-header {
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+  }
+
+  .site-menu {
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
+  }
+
+  .brand,
+  .menu-email {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .menu-email {
+    display: flex;
+  }
+
+  .primary-nav a {
+    min-height: 56px;
+  }
+
+  .hero {
+    min-height: 100svh;
+  }
+
+  .hero-image {
+    object-position: 54% center;
+  }
+
+  .intro-grid,
+  .about-grid,
+  .process-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+
+  .intro-inner {
+    padding-top: max(96px, 14svh);
+  }
+
+  .intro-inner > .section-label {
+    margin-bottom: 32px;
+  }
+
+  .intro-copy {
+    padding-top: 0;
+  }
+
+  .process-section .section-heading {
+    position: static;
+  }
+
+  .manufacturing-media {
+    min-height: 0;
+    aspect-ratio: 4 / 3;
+    padding: 24px;
+  }
+
+  .manufacturing-media img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: contain;
+  }
+
+  /* Panoramas get their own landscape area instead of covering a tall text section. */
+  .applications-section,
+  .contact-outro {
+    height: auto;
+  }
+
+  .applications-stage,
+  .contact-stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    gap: 0;
+  }
+
+  .applications-stage {
+    background: #171d1b;
+  }
+
+  .application-image,
+  .contact-media {
+    position: relative;
+    inset: auto;
+    z-index: 0;
+    flex: none;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1.8;
+  }
+
+  .application-image::after,
+  .contact-photo::after {
+    display: none;
+  }
+
+  .applications-heading {
+    width: 100%;
+    padding: 40px 20px 32px;
+  }
+
+  .applications-heading h2 {
+    font-size: 3.75rem;
+  }
+
+  .application-grid {
+    width: 100%;
+    padding: 0 20px 48px;
+    gap: 28px 24px;
+  }
+
+  .application-grid h3 {
+    margin-bottom: 12px;
+  }
+
+  .application-grid p {
+    font-size: 0.9375rem;
+  }
+
+  .contact-invitation,
+  .contact-connect {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    min-height: 0;
+    padding: 28px 20px 12px;
+  }
+
+  .contact-invitation h2 {
+    margin-bottom: 0;
+    font-size: 4rem;
+  }
+
+  .contact-invitation .section-label {
+    margin-bottom: 12px;
+  }
+
+  .contact-project-link,
+  .contact-connect > svg,
+  .contact-connect > .section-label {
+    display: none;
+  }
+
+  .contact-media {
+    aspect-ratio: 2.4;
+  }
+
+  .contact-connect {
+    width: calc(100% - 40px);
+    margin-inline: auto;
+    padding: 0 0 28px;
+  }
+
+  .contact-connect > p:last-child {
+    margin-top: 10px;
+  }
+
+  .contact-grid {
+    width: calc(100% - 40px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 20px;
+    padding: 28px 0;
+    font-size: 0.875rem;
+  }
+
+  .contact-grid span {
+    margin-bottom: 8px;
+    font-size: 1.75rem;
+  }
+
+  .contact-grid > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .site-footer {
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 1024px) {
+  .assembly-section {
+    height: 360svh;
+  }
+
+  .assembly-sticky {
+    position: sticky;
+    height: 100svh;
+    grid-template-rows: auto auto auto;
+    align-content: center;
+    gap: 14px;
+    padding: 24px 20px;
+  }
+
+  .assembly-copy {
+    grid-row: 1;
+    max-width: 540px;
+    width: 100%;
+    opacity: 1;
+  }
+
+  .assembly-copy h2 {
+    margin-bottom: 0;
+  }
+
+  .assembly-copy p {
+    display: none;
+  }
+
+  .assembly-media {
+    position: relative;
+    inset: auto;
+    z-index: 0;
+    grid-row: 2;
+    align-self: center;
+    width: calc(100% + 40px);
+    height: auto;
+    aspect-ratio: 1.8;
+    margin-inline: -20px;
+  }
+
+  .assembly-visual::after {
+    display: none;
+  }
+
+  .assembly-reveal {
+    --assembly-inset: 8%;
+  }
+
+  .assembly-reveal-title {
+    inset: 20px 12px auto;
+    --assembly-title-size: 6.5rem;
+  }
+
+  .assembly-reveal-caption {
+    bottom: 10px;
+    font-size: 1rem;
+  }
+
+  .assembly-timeline {
+    grid-row: 3;
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .blueprint-meta {
+    margin-bottom: 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .intro-inner,
+  .manufacturing-section,
+  .systems-section,
+  .process-section,
+  .about-section {
+    width: calc(100% - 40px);
+  }
+
+  .manufacturing-media {
+    padding: 20px;
+  }
+
+  .system-cards {
+    gap: 8px;
+  }
+
+  .system-cards h3 {
+    margin-top: 24px;
+  }
+
+  .application-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .application-grid > div {
+    padding-top: 20px;
+  }
+
+  .application-grid h3 {
+    font-size: 1.875rem;
+  }
+
+  .applications-heading h2 {
+    font-size: 3rem;
+  }
+
+  .contact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 16px;
+  }
+
+  .contact-invitation h2 {
+    font-size: 3rem;
+  }
+
+  .intro-inner {
+    padding-bottom: 48px;
+  }
+
+  .manufacturing-section,
+  .systems-section,
+  .process-section,
+  .about-section {
+    padding-block: 48px;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .assembly-reveal-title {
+    --assembly-title-size: 4.5rem;
+  }
+
+  .assembly-reveal-caption {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 360px) and (orientation: portrait) {
+  .assembly-reveal-title {
+    --assembly-title-size: 3.75rem;
+  }
+}
+
+@media (max-width: 1024px) and (orientation: landscape) {
+  .assembly-media,
+  .application-image,
+  .contact-media {
+    aspect-ratio: 2.6;
+  }
+
+  .manufacturing-media {
+    aspect-ratio: 2;
+  }
+
+  .site-menu .primary-nav {
+    margin-top: 20px;
+  }
+
+  .site-menu .primary-nav a {
+    font-size: 2.25rem;
+  }
+}
+
+@media (max-width: 1024px) and (max-height: 600px) and (orientation: landscape) {
+  .assembly-sticky {
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-content: normal;
+    padding: 88px 24px 16px;
+  }
+
+  .assembly-media {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    grid-row: auto;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    aspect-ratio: auto;
+  }
+
+  .assembly-visual::after {
+    display: block;
+  }
+
+  .assembly-timeline {
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 1024px) and (max-height: 700px) and (orientation: portrait) {
+  .assembly-sticky {
+    gap: 12px;
+    padding: 80px 20px 12px;
+  }
+}
+
+@media (max-width: 1024px) and (prefers-reduced-motion: reduce) {
+  .assembly-section {
+    height: auto;
+  }
+
+  .assembly-sticky {
+    position: relative;
+    height: auto;
   }
 }

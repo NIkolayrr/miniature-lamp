@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { cubicBezier } from "motion";
-import { MotionConfig, motion, useMotionTemplate, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
+import { MotionConfig, motion, useMotionTemplate, useMotionValue, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import { ArrowDown, ArrowUp, ArrowUpRight, Blocks, Construction, DraftingCompass, Factory, Menu, Plus, Workflow, X } from "lucide-react";
 
 import framecadMachine from "../assets/framecad-machine.png";
@@ -158,7 +158,7 @@ const processSteps = [
 const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
 const assemblyRevealEnd = 0.28;
 const revealEase = [0.16, 1, 0.3, 1];
-const revealViewport = { once: true, amount: 0.22, margin: "0px 0px -18% 0px" };
+const revealViewport = { once: true, amount: 0.12, margin: "0px 0px -32px 0px" };
 
 const fadeUpVariants = {
   hidden: { opacity: 0, y: 48 },
@@ -279,6 +279,20 @@ function useSectionScroll(offset = ["start end", "end start"]) {
     skipInitialAnimation: true,
   });
   return { sectionRef, progress };
+}
+
+function useCompactLayout() {
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1024px)").matches);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1024px)");
+    const update = () => setCompact(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return compact;
 }
 
 function SideReveal({ children, className, from = "left", delay = 0, reducedMotion, ...props }) {
@@ -666,7 +680,7 @@ function IntroSection({ sectionRef, scrollYProgress }) {
   );
 }
 
-function StageList({ activeStageIndex, reducedMotion }) {
+function StageList({ activeStageIndex, reducedMotion, onStageSelect, animatedSelection }) {
   const listRef = useRef(null);
   const previousStageRef = useRef(-1);
 
@@ -687,7 +701,7 @@ function StageList({ activeStageIndex, reducedMotion }) {
   }, [activeStageIndex, reducedMotion]);
 
   return (
-    <ol className="stage-list" aria-label="Assembly stages" ref={listRef}>
+    <ol className={`stage-list${animatedSelection ? " has-animated-selection" : ""}`} aria-label="Assembly stages" ref={listRef}>
       {stages.map((stage, index) => (
         <motion.li
           className={activeStageIndex === index ? "is-active" : undefined}
@@ -700,9 +714,25 @@ function StageList({ activeStageIndex, reducedMotion }) {
           viewport={{ once: true, amount: 0.1 }}
           whileInView={{ opacity: 1, x: 0 }}
         >
-          <span>{String(index + 1).padStart(2, "0")}</span>
-          <strong>{stage.label}</strong>
-          <small>{stage.description}</small>
+          {animatedSelection && activeStageIndex === index && (
+            <motion.span
+              className="stage-indicator"
+              layoutId="assembly-active-stage"
+              aria-hidden="true"
+              transition={{ duration: reducedMotion ? 0 : 0.4, ease: revealEase }}
+            />
+          )}
+          <button
+            className="stage-button"
+            type="button"
+            aria-current={activeStageIndex === index ? "step" : undefined}
+            aria-label={`${stage.label}: ${stage.description}`}
+            onClick={() => onStageSelect(index)}
+          >
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <strong>{stage.label}</strong>
+            <small>{stage.description}</small>
+          </button>
         </motion.li>
       ))}
     </ol>
@@ -729,24 +759,28 @@ function ConstructionFrame({ index, alt = "", scale }) {
   );
 }
 
-const ConstructionLayer = memo(function ConstructionLayer({ stage, index, position, isActive }) {
+const ConstructionLayer = memo(function ConstructionLayer({ stage, index, position, isActive, directional }) {
   const opacity = useTransform(position, (value) => clamp(value - index + 1));
   const visibility = useTransform(position, (value) => value >= index - 1 && value < index + 1 ? "visible" : "hidden");
-  const willChange = useTransform(visibility, (value) => value === "visible" ? "opacity" : "auto");
+  const willChange = useTransform(visibility, (value) => value === "visible" ? directional ? "opacity, clip-path" : "opacity" : "auto");
+  const clipPath = useTransform(position, (value) => {
+    const inset = (1 - clamp(value - index + 1)) * 100;
+    return index % 2 ? `inset(0% ${inset}% 0% 0%)` : `inset(0% 0% 0% ${inset}%)`;
+  });
 
   return (
     <motion.div
       className="construction-layer"
       data-stage={index}
       aria-hidden={!isActive}
-      style={{ opacity, visibility, willChange }}
+      style={{ opacity, visibility, willChange, clipPath: directional ? clipPath : "none" }}
     >
       <ConstructionFrame index={index} alt={`${stage.label}: ${stage.description}`} />
     </motion.div>
   );
 });
 
-function ConstructionScene({ activeStageIndex, progress }) {
+function ConstructionScene({ activeStageIndex, progress, directional }) {
   // Keep the outgoing stage opaque; fading both layers would darken the image midway.
   const position = useTransform(progress, getConstructionPosition);
 
@@ -759,6 +793,7 @@ function ConstructionScene({ activeStageIndex, progress }) {
           index={index}
           position={position}
           isActive={index === activeStageIndex}
+          directional={directional}
         />
       ))}
     </div>
@@ -801,7 +836,9 @@ function AssemblyReveal({ progress }) {
 }
 
 const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
+  const compactLayout = useCompactLayout();
   const sectionRef = useRef(null);
+  const selectedProgress = useMotionValue(1);
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start start", "end end"] });
   const smoothProgress = useSpring(scrollYProgress, {
     stiffness: 150,
@@ -812,22 +849,43 @@ const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
     skipInitialAnimation: true,
   });
   const revealProgress = useTransform(smoothProgress, (value) => clamp(value / assemblyRevealEnd));
-  const progress = useTransform(smoothProgress, (value) => reducedMotion ? 1 : clamp((value - assemblyRevealEnd) / (1 - assemblyRevealEnd)));
+  const progress = useTransform(() => {
+    if (reducedMotion) return selectedProgress.get();
+    return clamp((smoothProgress.get() - assemblyRevealEnd) / (1 - assemblyRevealEnd));
+  });
   const contentOpacity = useTransform(smoothProgress, [assemblyRevealEnd, assemblyRevealEnd + 0.045], [0, 1]);
+  const contentVisibility = useTransform(contentOpacity, (value) => value < 0.001 ? "hidden" : "visible");
   const progressLabel = useTransform(progress, (value) => `${Math.round(value * 100).toString().padStart(2, "0")}%`);
   const [activeStageIndex, setActiveStageIndex] = useState(() => getActiveStageIndex(progress.get()));
 
   // Only stage changes enter React state; continuous motion stays on Motion values.
   useMotionValueEvent(progress, "change", (value) => setActiveStageIndex(getActiveStageIndex(value)));
 
+  function selectStage(index) {
+    const stage = stages[index];
+    const stageProgress = (stage.start + stage.end) / 2;
+    if (reducedMotion) {
+      selectedProgress.set(index === 0 ? 0 : index === stages.length - 1 ? 1 : stageProgress);
+      return;
+    }
+    const section = sectionRef.current;
+    const targetProgress = assemblyRevealEnd + stageProgress * (1 - assemblyRevealEnd);
+    window.scrollTo({
+      top: window.scrollY + section.getBoundingClientRect().top + (section.offsetHeight - window.innerHeight) * targetProgress,
+      behavior: "smooth",
+    });
+  }
+
   return (
     <section className="assembly-section" id="assembly" data-assembly aria-labelledby="assembly-title" ref={sectionRef}>
       <div className="assembly-sticky">
-        <div className="assembly-visual" aria-label="Construction stages">
-          <ConstructionScene activeStageIndex={activeStageIndex} progress={progress} />
+        <div className="assembly-media">
+          <div className="assembly-visual" aria-label="Construction stages">
+            <ConstructionScene activeStageIndex={activeStageIndex} progress={progress} directional={compactLayout && !reducedMotion} />
+          </div>
+          {!reducedMotion && <AssemblyReveal progress={revealProgress} />}
         </div>
-        {!reducedMotion && <AssemblyReveal progress={revealProgress} />}
-        <motion.div className="assembly-copy" style={{ opacity: reducedMotion ? 1 : contentOpacity }}>
+        <motion.div className="assembly-copy" style={{ "--assembly-content-opacity": reducedMotion ? 1 : contentOpacity }}>
           <div className="assembly-heading">
             <Reveal className="section-label">The System</Reveal>
             <SplitReveal
@@ -840,12 +898,12 @@ const AssemblySection = memo(function AssemblySection({ reducedMotion }) {
             </Reveal>
           </div>
         </motion.div>
-        <motion.div className="assembly-timeline" style={{ opacity: reducedMotion ? 1 : contentOpacity }}>
+        <motion.div className="assembly-timeline" style={{ "--assembly-content-opacity": reducedMotion ? 1 : contentOpacity, "--assembly-content-visibility": reducedMotion ? "visible" : contentVisibility }}>
           <div className="blueprint-meta">
             <span>Assembly Progress</span>
             <motion.strong>{progressLabel}</motion.strong>
           </div>
-          <StageList activeStageIndex={activeStageIndex} reducedMotion={reducedMotion} />
+          <StageList activeStageIndex={activeStageIndex} reducedMotion={reducedMotion} onStageSelect={selectStage} animatedSelection={compactLayout} />
         </motion.div>
       </div>
     </section>
@@ -910,6 +968,8 @@ function SystemsSection({ reducedMotion }) {
 }
 
 function ApplicationsSection({ reducedMotion }) {
+  const compactLayout = useCompactLayout();
+  const staticLayout = reducedMotion || compactLayout;
   const { sectionRef, progress } = useSectionScroll();
   const mediaClip = useTransform(progress, [0.12, 0.45], ["inset(12% 24% 12% 24%)", "inset(0% 0% 0% 0%)"]);
   const imageScale = useTransform(progress, [0.12, 0.45], [0.88, 1]);
@@ -919,14 +979,14 @@ function ApplicationsSection({ reducedMotion }) {
   return (
     <section className="applications-section" id="applications" aria-labelledby="applications-title" ref={sectionRef}>
       <div className="applications-stage">
-        <motion.div className="application-image" style={{ clipPath: reducedMotion ? "none" : mediaClip }}>
-          <ConstructionFrame index={1} alt="Steel structure ready for a range of building applications" scale={reducedMotion ? 1 : imageScale} />
+        <motion.div className="application-image" style={{ clipPath: staticLayout ? "none" : mediaClip }}>
+          <ConstructionFrame index={1} alt="Steel structure ready for a range of building applications" scale={staticLayout ? 1 : imageScale} />
         </motion.div>
-        <motion.div className="applications-heading" style={{ opacity: reducedMotion ? 1 : titleOpacity }}>
+        <motion.div className="applications-heading" style={{ opacity: staticLayout ? 1 : titleOpacity }}>
           <p className="section-label">Applications</p>
           <h2 id="applications-title">Spaces for<br /><em>every possibility.</em></h2>
         </motion.div>
-        <motion.div className="application-grid" style={{ "--application-details-opacity": reducedMotion ? 1 : detailsOpacity }}>
+        <motion.div className="application-grid" style={{ "--application-details-opacity": staticLayout ? 1 : detailsOpacity }}>
           {applications.map((application, index) => (
             <SideReveal delay={index * 0.08} from={index % 2 ? "right" : "left"} reducedMotion={reducedMotion} key={application.title}>
               <h3>{application.title}</h3>
@@ -991,6 +1051,8 @@ function AboutSection({ reducedMotion }) {
 }
 
 function ContactSection({ reducedMotion }) {
+  const compactLayout = useCompactLayout();
+  const staticLayout = reducedMotion || compactLayout;
   const { sectionRef, progress } = useSectionScroll(["start start", "end end"]);
   const mediaClip = useTransform(progress, [0.08, 0.78], ["inset(0% 0% 0% 0%)", "inset(8% 22% 54% 22%)"], { ease: cubicBezier(0.4, 0, 0.2, 1) });
   const imageScale = useTransform(progress, [0.08, 0.78], [1, 0.58], { ease: cubicBezier(0.4, 0, 0.2, 1) });
@@ -1006,19 +1068,19 @@ function ContactSection({ reducedMotion }) {
     <section className="contact-section" id="contact" aria-labelledby="contact-title">
       <div className="contact-outro" ref={sectionRef}>
         <div className="contact-stage">
-          <motion.div className="contact-media" style={{ clipPath: reducedMotion ? "none" : mediaClip }}>
-            <motion.div className="contact-photo" style={{ scale: reducedMotion ? 1 : imageScale, y: reducedMotion ? "0%" : imageY }}>
+          <motion.div className="contact-media" style={{ clipPath: staticLayout ? "none" : mediaClip }}>
+            <motion.div className="contact-photo" style={{ scale: staticLayout ? 1 : imageScale, y: staticLayout ? "0%" : imageY }}>
               <ConstructionFrame index={5} alt="Completed glass-fronted building at sunset" />
             </motion.div>
           </motion.div>
-          <motion.div className="contact-invitation" style={{ opacity: reducedMotion ? 1 : invitationOpacity, visibility: reducedMotion ? "visible" : invitationVisibility, y: reducedMotion ? 0 : invitationY }}>
+          <motion.div className="contact-invitation" style={{ opacity: staticLayout ? 1 : invitationOpacity, visibility: staticLayout ? "visible" : invitationVisibility, y: staticLayout ? 0 : invitationY }}>
             <p className="section-label">Your Next Project</p>
             <h2 id="contact-title">Let's build<br /><em>what's next.</em></h2>
             <a className="contact-project-link" href="mailto:office@innostal.com?subject=Project%20inquiry">
               Start a project <ArrowUpRight size={22} strokeWidth={1.25} aria-hidden="true" />
             </a>
           </motion.div>
-          <motion.div className="contact-connect" style={{ opacity: reducedMotion ? 1 : connectOpacity, visibility: reducedMotion ? "visible" : connectVisibility, y: reducedMotion ? 0 : connectY }}>
+          <motion.div className="contact-connect" style={{ opacity: staticLayout ? 1 : connectOpacity, visibility: staticLayout ? "visible" : connectVisibility, y: staticLayout ? 0 : connectY }}>
             <DraftingCompass size={36} strokeWidth={1} aria-hidden="true" />
             <p className="section-label">A Conversation Starts Here</p>
             <a className="contact-email" href="mailto:office@innostal.com">office@innostal.com</a>
